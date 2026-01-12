@@ -31,7 +31,7 @@ jobs:
       
       - name: Tests with coverage
         env:
-          DATABASE_URL: "sqlite:///./ci.db"
+          DATABASE_URL: "sqlite:///./app.db"
           API_KEY_ENABLED: "true"
           API_KEY: "TEST_KEY"
         run: |
