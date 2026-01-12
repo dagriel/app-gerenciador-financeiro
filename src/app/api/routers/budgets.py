@@ -1,5 +1,7 @@
 """Budgets router - CRUD for monthly budgets."""
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -61,7 +63,7 @@ def upsert_budget(payload: BudgetUpsert, db: Session = Depends(get_db)) -> Budge
     )
 
     if existing:
-        existing.amount_planned = payload.amount_planned
+        existing.amount_planned = Decimal(str(payload.amount_planned))
         db.commit()
         db.refresh(existing)
         return existing
@@ -70,7 +72,7 @@ def upsert_budget(payload: BudgetUpsert, db: Session = Depends(get_db)) -> Budge
     bud = Budget(
         month=payload.month,
         category_id=payload.category_id,
-        amount_planned=payload.amount_planned,
+        amount_planned=Decimal(str(payload.amount_planned)),
     )
     db.add(bud)
     db.commit()

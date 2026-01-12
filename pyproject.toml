@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "app-gerenciador-financeiro"
 version = "0.1.0"
@@ -27,6 +31,9 @@ target-version = "py313"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 ignore = ["E203", "B008"]  # B008: Do not perform function call in defaults (FastAPI pattern)
+
+[tool.setuptools.packages.find]
+where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
