@@ -4,12 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.schemas.reports import MonthlySummaryOut
 from app.services.reports import monthly_summary
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
-@router.get("/monthly-summary")
+@router.get("/monthly-summary", response_model=MonthlySummaryOut)
 def report_monthly_summary(month: str, db: Session = Depends(get_db)) -> dict:
     """Get monthly financial summary with budget comparison.
 

@@ -48,7 +48,7 @@ def upsert_budget(payload: BudgetUpsert, db: Session = Depends(get_db)) -> Budge
     # Validate category exists, is active, and is EXPENSE
     cat = (
         db.query(Category)
-        .filter(Category.id == payload.category_id, Category.active == True)  # noqa: E712
+        .filter(Category.id == payload.category_id, Category.active.is_(True))
         .one_or_none()
     )
     if not cat:

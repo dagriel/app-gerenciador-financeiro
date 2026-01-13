@@ -30,7 +30,7 @@ def list_categories(
     """
     q = db.query(Category)
     if not include_inactive:
-        q = q.filter(Category.active == True)  # noqa: E712
+        q = q.filter(Category.active.is_(True))
     return q.order_by(Category.id.asc()).all()
 
 
@@ -54,7 +54,12 @@ def create_category(payload: CategoryCreate, db: Session = Depends(get_db)) -> C
 
     cat = Category(name=payload.name, kind=payload.kind.value, group=payload.group.value)
     db.add(cat)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as e:
+        db.rollback()
+        # Safety net (race conditions): keep behavior consistent with exists-check.
+        raise HTTPException(status_code=409, detail=ErrorMessage.CATEGORY_ALREADY_EXISTS) from e
     db.refresh(cat)
     return cat
 

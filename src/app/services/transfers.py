@@ -42,7 +42,7 @@ def create_transfer(
     # Validate accounts exist and are active (keep behavior consistent with /transactions).
     from_acc = (
         db.query(Account)
-        .filter(Account.id == from_account_id, Account.active == True)  # noqa: E712
+        .filter(Account.id == from_account_id, Account.active.is_(True))
         .one_or_none()
     )
     if not from_acc:
@@ -50,7 +50,7 @@ def create_transfer(
 
     to_acc = (
         db.query(Account)
-        .filter(Account.id == to_account_id, Account.active == True)  # noqa: E712
+        .filter(Account.id == to_account_id, Account.active.is_(True))
         .one_or_none()
     )
     if not to_acc:

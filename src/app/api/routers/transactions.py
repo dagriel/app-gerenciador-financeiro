@@ -96,7 +96,7 @@ def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)
     # Validate account exists and is active
     acc = (
         db.query(Account)
-        .filter(Account.id == payload.account_id, Account.active == True)  # noqa: E712
+        .filter(Account.id == payload.account_id, Account.active.is_(True))
         .one_or_none()
     )
     if not acc:
@@ -105,7 +105,7 @@ def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)
     # Validate category exists, is active, and matches kind
     cat = (
         db.query(Category)
-        .filter(Category.id == payload.category_id, Category.active == True)  # noqa: E712
+        .filter(Category.id == payload.category_id, Category.active.is_(True))
         .one_or_none()
     )
     if not cat:

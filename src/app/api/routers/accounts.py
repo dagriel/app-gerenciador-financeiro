@@ -29,7 +29,7 @@ def list_accounts(
     """
     q = db.query(Account)
     if not include_inactive:
-        q = q.filter(Account.active == True)  # noqa: E712
+        q = q.filter(Account.active.is_(True))
     return q.order_by(Account.id.asc()).all()
 
 

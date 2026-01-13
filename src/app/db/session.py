@@ -26,6 +26,9 @@ def get_engine() -> Engine:
         def _set_sqlite_pragma(dbapi_connection, _connection_record) -> None:  # noqa: ANN001
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA foreign_keys=ON")
+            # Reduce "database is locked" issues and improve read/write concurrency for local usage.
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
             cursor.close()
 
     return engine
