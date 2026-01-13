@@ -27,6 +27,16 @@ def test_categories_crud(client, headers):
     r = client.delete(f"/categories/{cat_id}", headers=headers)
     assert r.status_code == 204
 
+    # Default list should exclude inactive
+    r = client.get("/categories", headers=headers)
+    assert r.status_code == 200
+    assert all(c["id"] != cat_id for c in r.json())
+
+    # include_inactive should include it
+    r = client.get("/categories?include_inactive=true", headers=headers)
+    assert r.status_code == 200
+    assert any(c["id"] == cat_id for c in r.json())
+
 
 def test_category_name_unique(client, headers):
     """Test that category names must be unique."""

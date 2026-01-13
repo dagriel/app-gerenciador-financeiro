@@ -5,6 +5,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.types import MoneyDecimal
+
 
 class TxKind(StrEnum):
     """Transaction kind enum."""
@@ -19,7 +21,7 @@ class TransactionCreate(BaseModel):
 
     date: dt.date
     description: str = ""
-    amount: float = Field(..., description="Despesa < 0; Receita > 0.")
+    amount: MoneyDecimal = Field(..., description="Despesa < 0; Receita > 0.")
     kind: TxKind
     account_id: int
     category_id: int | None = None
@@ -33,7 +35,7 @@ class TransactionOut(BaseModel):
     id: int
     date: dt.date
     description: str
-    amount: float
+    amount: MoneyDecimal
     kind: TxKind
     account_id: int
     category_id: int | None
@@ -45,6 +47,14 @@ class TransferCreate(BaseModel):
 
     date: dt.date
     description: str = ""
-    amount_abs: float = Field(..., gt=0)
+    amount_abs: MoneyDecimal = Field(..., gt=0)
     from_account_id: int
     to_account_id: int
+
+
+class TransferOut(BaseModel):
+    """Schema for transfer response."""
+
+    pair_id: str
+    out_id: int
+    in_id: int

@@ -28,10 +28,14 @@ jobs:
       - name: Format check (ruff format)
         run: |
           ruff format --check .
+
+      - name: Type check (pyright)
+        run: |
+          pyright
       
       - name: Tests with coverage
         env:
-          DATABASE_URL: "sqlite:///./app.db"
+          DATABASE_URL: "sqlite:///./test_app.db"
           API_KEY_ENABLED: "true"
           API_KEY: "TEST_KEY"
         run: |

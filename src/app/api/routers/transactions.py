@@ -1,14 +1,20 @@
 """Transactions router - CRUD for transactions including transfers."""
 
 import datetime as dt
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.core.error_messages import ErrorMessage
 from app.db.models import Account, Category, Transaction
-from app.schemas.transactions import TransactionCreate, TransactionOut, TransferCreate, TxKind
+from app.schemas.transactions import (
+    TransactionCreate,
+    TransactionOut,
+    TransferCreate,
+    TransferOut,
+    TxKind,
+)
 from app.services.transfers import create_transfer
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
@@ -42,7 +48,7 @@ def list_transactions(
     q = db.query(Transaction)
 
     if (from_date is None) ^ (to_date is None):
-        raise HTTPException(status_code=400, detail="Informe from_date e to_date juntos")
+        raise HTTPException(status_code=400, detail=ErrorMessage.TX_FROM_TO_BOTH_REQUIRED)
 
     if from_date and to_date:
         q = q.filter(Transaction.date.between(from_date, to_date))
@@ -76,18 +82,16 @@ def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)
         HTTPException: For validation errors
     """
     if payload.kind == TxKind.TRANSFER:
-        raise HTTPException(
-            status_code=400, detail="Use /transactions/transfer para transferências"
-        )
+        raise HTTPException(status_code=400, detail=ErrorMessage.TX_USE_TRANSFER_ENDPOINT)
 
     if payload.kind == TxKind.INCOME and payload.amount <= 0:
-        raise HTTPException(status_code=400, detail="INCOME requer amount > 0")
+        raise HTTPException(status_code=400, detail=ErrorMessage.TX_INCOME_REQUIRES_AMOUNT_GT_0)
 
     if payload.kind == TxKind.EXPENSE and payload.amount >= 0:
-        raise HTTPException(status_code=400, detail="EXPENSE requer amount < 0")
+        raise HTTPException(status_code=400, detail=ErrorMessage.TX_EXPENSE_REQUIRES_AMOUNT_LT_0)
 
     if payload.category_id is None:
-        raise HTTPException(status_code=400, detail="category_id é obrigatório para INCOME/EXPENSE")
+        raise HTTPException(status_code=400, detail=ErrorMessage.TX_CATEGORY_ID_REQUIRED)
 
     # Validate account exists and is active
     acc = (
@@ -96,7 +100,7 @@ def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)
         .one_or_none()
     )
     if not acc:
-        raise HTTPException(status_code=400, detail="Conta inválida/inativa")
+        raise HTTPException(status_code=400, detail=ErrorMessage.ACCOUNT_INVALID_OR_INACTIVE)
 
     # Validate category exists, is active, and matches kind
     cat = (
@@ -105,18 +109,17 @@ def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)
         .one_or_none()
     )
     if not cat:
-        raise HTTPException(status_code=400, detail="Categoria inválida/inativa")
+        raise HTTPException(status_code=400, detail=ErrorMessage.CATEGORY_INVALID_OR_INACTIVE)
 
     if payload.kind == TxKind.INCOME and cat.kind != "INCOME":
-        raise HTTPException(status_code=400, detail="Categoria incompatível com INCOME")
+        raise HTTPException(status_code=400, detail=ErrorMessage.TX_CATEGORY_INCOMPATIBLE_INCOME)
     if payload.kind == TxKind.EXPENSE and cat.kind != "EXPENSE":
-        raise HTTPException(status_code=400, detail="Categoria incompatível com EXPENSE")
+        raise HTTPException(status_code=400, detail=ErrorMessage.TX_CATEGORY_INCOMPATIBLE_EXPENSE)
 
-    # Convert float to Decimal safely
     tx = Transaction(
         date=payload.date,
         description=payload.description,
-        amount=Decimal(str(payload.amount)),
+        amount=payload.amount,
         kind=payload.kind.value,
         account_id=payload.account_id,
         category_id=payload.category_id,
@@ -127,7 +130,7 @@ def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)
     return tx
 
 
-@router.post("/transfer", status_code=201)
+@router.post("/transfer", response_model=TransferOut, status_code=201)
 def transfer(payload: TransferCreate, db: Session = Depends(get_db)) -> dict:
     """Create a transfer between two accounts.
 
@@ -148,7 +151,7 @@ def transfer(payload: TransferCreate, db: Session = Depends(get_db)) -> dict:
             db,
             date=payload.date,
             description=payload.description,
-            amount_abs=Decimal(str(payload.amount_abs)),
+            amount_abs=payload.amount_abs,
             from_account_id=payload.from_account_id,
             to_account_id=payload.to_account_id,
         )
@@ -171,7 +174,7 @@ def delete_transaction(transaction_id: int, db: Session = Depends(get_db)) -> No
     """
     tx = db.query(Transaction).filter(Transaction.id == transaction_id).one_or_none()
     if not tx:
-        raise HTTPException(status_code=404, detail="Transação não encontrada")
+        raise HTTPException(status_code=404, detail=ErrorMessage.TX_NOT_FOUND)
 
     # If it's a transfer, delete the entire pair
     if tx.kind == "TRANSFER" and tx.transfer_pair_id:

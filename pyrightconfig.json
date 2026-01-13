@@ -1,14 +1,9 @@
 {
-  "include": [
-    "src",
-    "tests",
-    "alembic"
-  ],
+  "include": ["src", "tests", "alembic"],
   "executionEnvironments": [
     {
       "root": "src"
     }
   ],
-  "pythonVersion": "3.13",
-  "pythonPlatform": "Windows"
+  "pythonVersion": "3.13"
 }

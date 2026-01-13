@@ -1,11 +1,11 @@
 """Budgets router - CRUD for monthly budgets."""
 
-from decimal import Decimal
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.core.error_messages import ErrorMessage
+from app.core.validators import parse_month_str
 from app.db.models import Budget, Category
 from app.schemas.budgets import BudgetOut, BudgetUpsert
 
@@ -23,6 +23,11 @@ def list_budgets(month: str, db: Session = Depends(get_db)) -> list[Budget]:
     Returns:
         List of budgets for the month
     """
+    try:
+        parse_month_str(month)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
     return db.query(Budget).filter(Budget.month == month).order_by(Budget.id.asc()).all()
 
 
@@ -47,12 +52,12 @@ def upsert_budget(payload: BudgetUpsert, db: Session = Depends(get_db)) -> Budge
         .one_or_none()
     )
     if not cat:
-        raise HTTPException(status_code=400, detail="Categoria inválida/inativa")
+        raise HTTPException(status_code=400, detail=ErrorMessage.CATEGORY_INVALID_OR_INACTIVE)
 
     if cat.kind != "EXPENSE":
         raise HTTPException(
             status_code=400,
-            detail="Orçamento só é suportado para categorias de despesa no MVP",
+            detail=ErrorMessage.BUDGET_ONLY_EXPENSE_MVP,
         )
 
     # Check if budget already exists (upsert logic)
@@ -63,7 +68,7 @@ def upsert_budget(payload: BudgetUpsert, db: Session = Depends(get_db)) -> Budge
     )
 
     if existing:
-        existing.amount_planned = Decimal(str(payload.amount_planned))
+        existing.amount_planned = payload.amount_planned
         db.commit()
         db.refresh(existing)
         return existing
@@ -72,7 +77,7 @@ def upsert_budget(payload: BudgetUpsert, db: Session = Depends(get_db)) -> Budge
     bud = Budget(
         month=payload.month,
         category_id=payload.category_id,
-        amount_planned=Decimal(str(payload.amount_planned)),
+        amount_planned=payload.amount_planned,
     )
     db.add(bud)
     db.commit()
@@ -93,7 +98,7 @@ def delete_budget(budget_id: int, db: Session = Depends(get_db)) -> None:
     """
     bud = db.query(Budget).filter(Budget.id == budget_id).one_or_none()
     if not bud:
-        raise HTTPException(status_code=404, detail="Orçamento não encontrado")
+        raise HTTPException(status_code=404, detail=ErrorMessage.BUDGET_NOT_FOUND)
 
     db.delete(bud)
     db.commit()

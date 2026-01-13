@@ -60,16 +60,19 @@ LOG_LEVEL=INFO
 
 ### 3. Inicialize o banco de dados
 
+> ✅ **As migrações do Alembic já estão versionadas no repositório** (pasta `alembic/`).
+> Para iniciar o banco local, basta aplicar as migrações:
+
 ```powershell
-# Inicialize o Alembic (apenas primeira vez)
-alembic init alembic
-
-# Crie a migração inicial
-alembic revision --autogenerate -m "init schema"
-
-# Aplique as migrações
 alembic upgrade head
 ```
+
+> Se você alterar os modelos e precisar gerar uma nova migração:
+>
+> ```powershell
+> alembic revision --autogenerate -m "descricao da alteracao"
+> alembic upgrade head
+> ```
 
 ### 4. Execute a aplicação
 
@@ -102,6 +105,14 @@ API_KEY_ENABLED=false
 
 ## 💡 Exemplos de Uso
 
+### Observação importante (valores monetários)
+
+Para evitar problemas de precisão de `float`, este MVP usa contrato “clean”:
+
+- A API **retorna** valores monetários como **string** (ex.: `"5000.00"`, `"-150.50"`).
+- A API **aceita** valores monetários como **string** (recomendado) ou número, mas a normalização final sempre será em 2 casas decimais.
+
+
 ### Health Check
 
 ```bash
@@ -132,7 +143,7 @@ curl -X POST http://127.0.0.1:8000/categories \
 curl -X POST http://127.0.0.1:8000/transactions \
   -H "X-API-Key: CHANGE_ME_LOCAL" \
   -H "Content-Type: application/json" \
-  -d "{\"date\":\"2026-01-15\",\"description\":\"Supermercado\",\"amount\":-150.50,\"kind\":\"EXPENSE\",\"account_id\":1,\"category_id\":1}"
+  -d "{\"date\":\"2026-01-15\",\"description\":\"Supermercado\",\"amount\":\"-150.50\",\"kind\":\"EXPENSE\",\"account_id\":1,\"category_id\":1}"
 ```
 
 ### Criar Transferência
@@ -141,7 +152,7 @@ curl -X POST http://127.0.0.1:8000/transactions \
 curl -X POST http://127.0.0.1:8000/transactions/transfer \
   -H "X-API-Key: CHANGE_ME_LOCAL" \
   -H "Content-Type: application/json" \
-  -d "{\"date\":\"2026-01-20\",\"description\":\"Movimentação\",\"amount_abs\":100.0,\"from_account_id\":1,\"to_account_id\":2}"
+  -d "{\"date\":\"2026-01-20\",\"description\":\"Movimentação\",\"amount_abs\":\"100.00\",\"from_account_id\":1,\"to_account_id\":2}"
 ```
 
 ### Criar Orçamento
@@ -150,7 +161,7 @@ curl -X POST http://127.0.0.1:8000/transactions/transfer \
 curl -X POST http://127.0.0.1:8000/budgets \
   -H "X-API-Key: CHANGE_ME_LOCAL" \
   -H "Content-Type: application/json" \
-  -d "{\"month\":\"2026-01\",\"category_id\":1,\"amount_planned\":500.0}"
+  -d "{\"month\":\"2026-01\",\"category_id\":1,\"amount_planned\":\"500.00\"}"
 ```
 
 ### Relatório Mensal
@@ -159,6 +170,19 @@ curl -X POST http://127.0.0.1:8000/budgets \
 curl -H "X-API-Key: CHANGE_ME_LOCAL" \
   "http://127.0.0.1:8000/reports/monthly-summary?month=2026-01"
 ```
+
+## 🗄️ Visualizar Banco de Dados
+
+Para explorar o banco de dados SQLite usando o DBeaver ou outras ferramentas, consulte o guia completo:
+
+📘 **[Guia de Configuração do DBeaver](docs/DBEAVER_SETUP.md)**
+
+O guia inclui:
+- Passo a passo para conectar ao banco no DBeaver
+- Estrutura detalhada de todas as tabelas
+- Queries SQL úteis para análise de dados
+- Alternativas ao DBeaver (SQLite Browser, VSCode Extensions)
+- Considerações importantes sobre concorrência
 
 ## 🧪 Testes
 
@@ -193,6 +217,12 @@ ruff check .
 
 ```powershell
 ruff format .
+```
+
+### Type check (opcional)
+
+```powershell
+pyright
 ```
 
 ### Verificação completa (antes de commit)
@@ -247,6 +277,8 @@ app-gerenciador-financeiro/
 ### Exclusão
 
 - **Contas/Categorias**: soft delete (`active=false`)
+  - Por padrão, `GET /accounts` e `GET /categories` retornam **apenas ativos**
+  - Use `?include_inactive=true` para incluir registros inativos
 - **Transferência**: deletar uma transação **remove o par completo**
 
 ## 🚨 Troubleshooting
@@ -260,7 +292,8 @@ where python
 python -c "import sys; print(sys.executable); print(sys.prefix)"
 ```
 
-Considere usar Python 3.12.x para maior compatibilidade.
+Esse aviso costuma ser apenas um *warning* do ambiente. O projeto foi testado em **Python 3.13**.
+Se você optar por usar **Python 3.12.x**, ajuste o `requires-python` no `pyproject.toml`.
 
 ### Erro: "database is locked"
 

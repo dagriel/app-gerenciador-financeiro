@@ -17,7 +17,7 @@ def test_budget_upsert(client, headers):
         headers=headers,
     )
     assert r.status_code == 201
-    assert r.json()["amount_planned"] == 500.0
+    assert r.json()["amount_planned"] == "500.00"
 
     # Update (upsert)
     r = client.post(
@@ -26,7 +26,7 @@ def test_budget_upsert(client, headers):
         headers=headers,
     )
     assert r.status_code == 201
-    assert r.json()["amount_planned"] == 600.0
+    assert r.json()["amount_planned"] == "600.00"
 
     # List budgets for month
     r = client.get("/budgets?month=2026-01", headers=headers)
@@ -106,15 +106,15 @@ def test_monthly_summary_report(client, headers):
     data = r.json()
 
     assert data["month"] == "2026-01"
-    assert data["income_total"] == 3000.0
-    assert data["expense_total"] == 450.0
-    assert data["balance"] == 2550.0
+    assert data["income_total"] == "3000.00"
+    assert data["expense_total"] == "450.00"
+    assert data["balance"] == "2550.00"
 
     # Check category breakdown
     cat_data = next(c for c in data["by_category"] if c["category_id"] == cat_expense["id"])
-    assert cat_data["planned"] == 500.0
-    assert cat_data["realized"] == 450.0
-    assert cat_data["deviation"] == -50.0  # spent less than planned
+    assert cat_data["planned"] == "500.00"
+    assert cat_data["realized"] == "450.00"
+    assert cat_data["deviation"] == "-50.00"  # spent less than planned
 
 
 def test_monthly_summary_empty_month(client, headers):
@@ -123,7 +123,7 @@ def test_monthly_summary_empty_month(client, headers):
     assert r.status_code == 200
     data = r.json()
 
-    assert data["income_total"] == 0.0
-    assert data["expense_total"] == 0.0
-    assert data["balance"] == 0.0
+    assert data["income_total"] == "0.00"
+    assert data["expense_total"] == "0.00"
+    assert data["balance"] == "0.00"
     assert len(data["by_category"]) == 0

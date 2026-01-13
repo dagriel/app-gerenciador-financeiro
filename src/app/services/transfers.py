@@ -5,7 +5,8 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.db.models import Transaction, new_pair_id
+from app.core.error_messages import ErrorMessage
+from app.db.models import Account, Transaction, new_pair_id
 
 
 def create_transfer(
@@ -34,9 +35,26 @@ def create_transfer(
         ValueError: If accounts are the same or amount_abs <= 0
     """
     if from_account_id == to_account_id:
-        raise ValueError("Conta origem e destino não podem ser iguais.")
+        raise ValueError(ErrorMessage.TRANSFER_SAME_ACCOUNTS)
     if amount_abs <= 0:
-        raise ValueError("amount_abs deve ser > 0")
+        raise ValueError(ErrorMessage.TRANSFER_AMOUNT_ABS_GT_0)
+
+    # Validate accounts exist and are active (keep behavior consistent with /transactions).
+    from_acc = (
+        db.query(Account)
+        .filter(Account.id == from_account_id, Account.active == True)  # noqa: E712
+        .one_or_none()
+    )
+    if not from_acc:
+        raise ValueError(ErrorMessage.TRANSFER_FROM_ACCOUNT_INVALID)
+
+    to_acc = (
+        db.query(Account)
+        .filter(Account.id == to_account_id, Account.active == True)  # noqa: E712
+        .one_or_none()
+    )
+    if not to_acc:
+        raise ValueError(ErrorMessage.TRANSFER_TO_ACCOUNT_INVALID)
 
     pair = new_pair_id()
 

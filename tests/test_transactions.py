@@ -25,7 +25,7 @@ def test_create_income(client, headers):
         headers=headers,
     )
     assert r.status_code == 201
-    assert r.json()["amount"] == 5000.0
+    assert r.json()["amount"] == "5000.00"
     assert r.json()["kind"] == "INCOME"
 
 
@@ -55,7 +55,7 @@ def test_create_expense(client, headers):
         headers=headers,
     )
     assert r.status_code == 201
-    assert r.json()["amount"] == -150.50
+    assert r.json()["amount"] == "-150.50"
     assert r.json()["kind"] == "EXPENSE"
 
 
@@ -144,4 +144,4 @@ def test_list_transactions_with_date_filter(client, headers):
     r = client.get("/transactions?from_date=2026-01-01&to_date=2026-01-31", headers=headers)
     assert r.status_code == 200
     assert len(r.json()) == 1
-    assert r.json()[0]["amount"] == 1000.0
+    assert r.json()[0]["amount"] == "1000.00"

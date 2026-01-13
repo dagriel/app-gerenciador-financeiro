@@ -36,9 +36,9 @@ def test_transfer_creates_two_transactions(client, headers):
     pair_txs = [t for t in txs if t["transfer_pair_id"] == data["pair_id"]]
     assert len(pair_txs) == 2
 
-    # Verify amounts
+    # Verify amounts (money is returned as string)
     amounts = sorted([t["amount"] for t in pair_txs])
-    assert amounts == [-100.0, 100.0]
+    assert amounts == ["-100.00", "100.00"]
 
 
 def test_delete_transfer_deletes_pair(client, headers):

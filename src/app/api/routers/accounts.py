@@ -1,9 +1,10 @@
 """Accounts router - CRUD for accounts."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
+from app.core.error_messages import ErrorMessage
 from app.db.models import Account
 from app.schemas.accounts import AccountCreate, AccountOut, AccountUpdate
 
@@ -11,16 +12,25 @@ router = APIRouter(prefix="/accounts", tags=["accounts"])
 
 
 @router.get("", response_model=list[AccountOut])
-def list_accounts(db: Session = Depends(get_db)) -> list[Account]:
-    """List all accounts.
+def list_accounts(
+    include_inactive: bool = Query(default=False),
+    db: Session = Depends(get_db),
+) -> list[Account]:
+    """List accounts.
+
+    By default, only active accounts are returned. Set include_inactive=true to include inactive.
 
     Args:
+        include_inactive: Whether to include inactive accounts in the result.
         db: Database session
 
     Returns:
         List of accounts
     """
-    return db.query(Account).order_by(Account.id.asc()).all()
+    q = db.query(Account)
+    if not include_inactive:
+        q = q.filter(Account.active == True)  # noqa: E712
+    return q.order_by(Account.id.asc()).all()
 
 
 @router.post("", response_model=AccountOut, status_code=201)
@@ -60,7 +70,7 @@ def update_account(
     """
     acc = db.query(Account).filter(Account.id == account_id).one_or_none()
     if not acc:
-        raise HTTPException(status_code=404, detail="Conta não encontrada")
+        raise HTTPException(status_code=404, detail=ErrorMessage.ACCOUNT_NOT_FOUND)
 
     if payload.name is not None:
         acc.name = payload.name
@@ -87,7 +97,7 @@ def delete_account(account_id: int, db: Session = Depends(get_db)) -> None:
     """
     acc = db.query(Account).filter(Account.id == account_id).one_or_none()
     if not acc:
-        raise HTTPException(status_code=404, detail="Conta não encontrada")
+        raise HTTPException(status_code=404, detail=ErrorMessage.ACCOUNT_NOT_FOUND)
 
     acc.active = False
     db.commit()

@@ -1,6 +1,6 @@
 """Reports router - Financial reports and summaries."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db
@@ -25,4 +25,7 @@ def report_monthly_summary(month: str, db: Session = Depends(get_db)) -> dict:
         - balance: Net balance (income - expenses)
         - by_category: List of categories with planned vs realized vs deviation
     """
-    return monthly_summary(db, month)
+    try:
+        return monthly_summary(db, month)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
