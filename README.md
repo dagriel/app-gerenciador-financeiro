@@ -74,7 +74,25 @@ alembic upgrade head
 > alembic upgrade head
 > ```
 
-### 4. Execute a aplicação
+### 4. Seeds (dados iniciais do MVP)
+
+Este projeto inclui um **seed idempotente** para acelerar validação do MVP, demos e QA.
+
+> Recomendado (dataset determinístico completo, incluindo transações e 1 transferência):
+```powershell
+python -m app.db.seed --reset --month 2026-01 --with-sample-transactions
+```
+
+- `--reset`: apaga dados das tabelas do domínio (transactions/budgets/categories/accounts) e recria tudo do zero.
+- Sem `--reset`: executa em modo **upsert** (não duplica contas/categorias/orçamentos).  
+  Para evitar duplicação silenciosa, as transações são **puladas** se o DB já tiver transações.
+
+> Somente estrutura mínima (contas/categorias/orçamentos, sem transações):
+```powershell
+python -m app.db.seed --reset --month 2026-01
+```
+
+### 5. Execute a aplicação
 
 ```powershell
 uvicorn app.main:app --reload

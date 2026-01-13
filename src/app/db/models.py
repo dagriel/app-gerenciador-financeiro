@@ -19,6 +19,15 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
+def utcnow() -> dt.datetime:
+    """Naive UTC now (avoid deprecated datetime.utcnow).
+
+    We intentionally return a naive datetime in UTC to keep compatibility with the
+    existing Alembic migration (DateTime without timezone).
+    """
+    return dt.datetime.now(dt.UTC).replace(tzinfo=None)
+
+
 class Account(Base):
     """Bank account or wallet."""
 
@@ -28,9 +37,7 @@ class Account(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     type: Mapped[str] = mapped_column(String(40), default="BANK", nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime, default=dt.datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
 
 class Category(Base):
@@ -65,9 +72,7 @@ class Transaction(Base):
     )
 
     transfer_pair_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
-    created_at: Mapped[dt.datetime] = mapped_column(
-        DateTime, default=dt.datetime.utcnow, nullable=False
-    )
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     account = relationship("Account")
     category = relationship("Category")
