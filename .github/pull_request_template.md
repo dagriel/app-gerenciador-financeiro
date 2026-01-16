@@ -13,6 +13,7 @@
 - [ ] `ruff check .` sem erros
 - [ ] `ruff format .` aplicado
 - [ ] `pytest` passando localmente
+- [ ] **Guardrails de arquitetura** passando (`pytest -k architecture`)
 - [ ] **Regras de domínio validadas**: sinais corretos (receita +, despesa -), transferência gera 2 transações, orçamento único por mês/categoria
 
 ### ✅ Verificação 2 - Revisor (peer review)
@@ -47,6 +48,7 @@
 
 ### 📚 Documentação e Conhecimento
 - [ ] **README** atualizado (se mudou setup, env vars, comandos)
+- [ ] **Arquitetura**: `docs/ARCHITECTURE.md` e/ou `docs/ARCH_REVIEW.md` atualizados quando houver mudança relevante
 - [ ] **OpenAPI/Swagger** atualizado (automático no FastAPI, mas validar contratos)
 - [ ] Se mudou modelos: **migração Alembic criada** e testada em DB limpo
 

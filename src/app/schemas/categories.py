@@ -2,7 +2,7 @@
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CategoryKind(StrEnum):
@@ -24,7 +24,7 @@ class CategoryGroup(StrEnum):
 class CategoryCreate(BaseModel):
     """Schema for creating a category."""
 
-    name: str
+    name: str = Field(..., min_length=1, max_length=120, examples=["Alimentação"])
     kind: CategoryKind
     group: CategoryGroup
 
@@ -32,7 +32,7 @@ class CategoryCreate(BaseModel):
 class CategoryUpdate(BaseModel):
     """Schema for updating a category."""
 
-    name: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=120, examples=["Alimentação"])
     kind: CategoryKind | None = None
     group: CategoryGroup | None = None
     active: bool | None = None

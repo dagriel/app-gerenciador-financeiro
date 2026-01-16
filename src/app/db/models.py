@@ -32,6 +32,7 @@ class Account(Base):
     """Bank account or wallet."""
 
     __tablename__ = "accounts"
+    __table_args__ = (UniqueConstraint("name", "type", name="uq_account_name_type"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)

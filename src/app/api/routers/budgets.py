@@ -1,104 +1,52 @@
-"""Budgets router - CRUD for monthly budgets."""
+"""Budgets router - CRUD for monthly budgets.
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+This router is intentionally thin:
+- Pydantic handles structural validation (422)
+- Services handle business rules (DomainError -> ProblemDetail)
+- UnitOfWork dependency handles commit/rollback
+"""
 
-from app.api.deps import get_db
-from app.core.error_messages import ErrorMessage
-from app.core.validators import parse_month_str
-from app.db.models import Budget, Category
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, Query
+
+from app.api.deps import get_uow
+from app.api.openapi import error_responses
+from app.db.uow import UnitOfWork
 from app.schemas.budgets import BudgetOut, BudgetUpsert
+from app.services.budgets import delete_budget, list_budgets, upsert_budget
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 
 
-@router.get("", response_model=list[BudgetOut])
-def list_budgets(month: str, db: Session = Depends(get_db)) -> list[Budget]:
-    """List all budgets for a given month.
-
-    Args:
-        month: Month in YYYY-MM format
-        db: Database session
-
-    Returns:
-        List of budgets for the month
-    """
-    try:
-        parse_month_str(month)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-
-    return db.query(Budget).filter(Budget.month == month).order_by(Budget.id.asc()).all()
+@router.get("", response_model=list[BudgetOut], responses=error_responses(400, 401, 422))
+def list_budgets_endpoint(
+    month: str = Query(
+        ...,
+        description="Mês no formato YYYY-MM.",
+        examples=["2026-01"],
+    ),
+    uow: UnitOfWork = Depends(get_uow),
+):
+    return list_budgets(uow, month=month)
 
 
-@router.post("", response_model=BudgetOut, status_code=201)
-def upsert_budget(payload: BudgetUpsert, db: Session = Depends(get_db)) -> Budget:
-    """Create or update a budget for a category in a month.
-
-    Args:
-        payload: Budget data
-        db: Database session
-
-    Returns:
-        Created or updated budget
-
-    Raises:
-        HTTPException: For validation errors
-    """
-    # Validate category exists, is active, and is EXPENSE
-    cat = (
-        db.query(Category)
-        .filter(Category.id == payload.category_id, Category.active.is_(True))
-        .one_or_none()
-    )
-    if not cat:
-        raise HTTPException(status_code=400, detail=ErrorMessage.CATEGORY_INVALID_OR_INACTIVE)
-
-    if cat.kind != "EXPENSE":
-        raise HTTPException(
-            status_code=400,
-            detail=ErrorMessage.BUDGET_ONLY_EXPENSE_MVP,
-        )
-
-    # Check if budget already exists (upsert logic)
-    existing = (
-        db.query(Budget)
-        .filter(Budget.month == payload.month, Budget.category_id == payload.category_id)
-        .one_or_none()
-    )
-
-    if existing:
-        existing.amount_planned = payload.amount_planned
-        db.commit()
-        db.refresh(existing)
-        return existing
-
-    # Create new budget
-    bud = Budget(
+@router.post(
+    "",
+    response_model=BudgetOut,
+    status_code=201,
+    responses=error_responses(400, 401, 422),
+)
+def upsert_budget_endpoint(payload: BudgetUpsert, uow: UnitOfWork = Depends(get_uow)):
+    return upsert_budget(
+        uow,
         month=payload.month,
         category_id=payload.category_id,
         amount_planned=payload.amount_planned,
     )
-    db.add(bud)
-    db.commit()
-    db.refresh(bud)
-    return bud
 
 
-@router.delete("/{budget_id}", status_code=204)
-def delete_budget(budget_id: int, db: Session = Depends(get_db)) -> None:
-    """Delete a budget.
-
-    Args:
-        budget_id: Budget ID
-        db: Database session
-
-    Raises:
-        HTTPException: If budget not found
-    """
-    bud = db.query(Budget).filter(Budget.id == budget_id).one_or_none()
-    if not bud:
-        raise HTTPException(status_code=404, detail=ErrorMessage.BUDGET_NOT_FOUND)
-
-    db.delete(bud)
-    db.commit()
+@router.delete("/{budget_id}", status_code=204, responses=error_responses(401, 404, 422))
+def delete_budget_endpoint(budget_id: int, uow: UnitOfWork = Depends(get_uow)) -> None:
+    delete_budget(uow, budget_id=budget_id)
+    return None

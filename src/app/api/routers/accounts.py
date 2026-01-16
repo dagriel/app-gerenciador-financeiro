@@ -1,103 +1,62 @@
-"""Accounts router - CRUD for accounts."""
+"""Accounts router - CRUD for accounts.
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+This router is intentionally thin:
+- Pydantic handles structural validation (422)
+- Services handle business rules (DomainError -> ProblemDetail)
+- UnitOfWork dependency handles commit/rollback
+"""
 
-from app.api.deps import get_db
-from app.core.error_messages import ErrorMessage
-from app.db.models import Account
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, Query
+
+from app.api.deps import get_uow
+from app.api.openapi import error_responses
+from app.db.uow import UnitOfWork
 from app.schemas.accounts import AccountCreate, AccountOut, AccountUpdate
+from app.services.accounts import create_account, delete_account, list_accounts, update_account
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 
 
-@router.get("", response_model=list[AccountOut])
-def list_accounts(
+@router.get("", response_model=list[AccountOut], responses=error_responses(401, 422))
+def list_accounts_endpoint(
     include_inactive: bool = Query(default=False),
-    db: Session = Depends(get_db),
-) -> list[Account]:
-    """List accounts.
-
-    By default, only active accounts are returned. Set include_inactive=true to include inactive.
-
-    Args:
-        include_inactive: Whether to include inactive accounts in the result.
-        db: Database session
-
-    Returns:
-        List of accounts
-    """
-    q = db.query(Account)
-    if not include_inactive:
-        q = q.filter(Account.active.is_(True))
-    return q.order_by(Account.id.asc()).all()
+    uow: UnitOfWork = Depends(get_uow),
+):
+    return list_accounts(uow, include_inactive=include_inactive)
 
 
-@router.post("", response_model=AccountOut, status_code=201)
-def create_account(payload: AccountCreate, db: Session = Depends(get_db)) -> Account:
-    """Create a new account.
-
-    Args:
-        payload: Account creation data
-        db: Database session
-
-    Returns:
-        Created account
-    """
-    acc = Account(name=payload.name, type=payload.type)
-    db.add(acc)
-    db.commit()
-    db.refresh(acc)
-    return acc
+@router.post(
+    "",
+    response_model=AccountOut,
+    status_code=201,
+    responses=error_responses(401, 409, 422),
+)
+def create_account_endpoint(payload: AccountCreate, uow: UnitOfWork = Depends(get_uow)):
+    return create_account(uow, name=payload.name, type_=payload.type)
 
 
-@router.put("/{account_id}", response_model=AccountOut)
-def update_account(
-    account_id: int, payload: AccountUpdate, db: Session = Depends(get_db)
-) -> Account:
-    """Update an account.
-
-    Args:
-        account_id: Account ID
-        payload: Update data
-        db: Database session
-
-    Returns:
-        Updated account
-
-    Raises:
-        HTTPException: If account not found
-    """
-    acc = db.query(Account).filter(Account.id == account_id).one_or_none()
-    if not acc:
-        raise HTTPException(status_code=404, detail=ErrorMessage.ACCOUNT_NOT_FOUND)
-
-    if payload.name is not None:
-        acc.name = payload.name
-    if payload.type is not None:
-        acc.type = payload.type
-    if payload.active is not None:
-        acc.active = payload.active
-
-    db.commit()
-    db.refresh(acc)
-    return acc
+@router.put(
+    "/{account_id}",
+    response_model=AccountOut,
+    responses=error_responses(401, 404, 409, 422),
+)
+def update_account_endpoint(
+    account_id: int,
+    payload: AccountUpdate,
+    uow: UnitOfWork = Depends(get_uow),
+):
+    return update_account(
+        uow,
+        account_id=account_id,
+        name=payload.name,
+        type_=payload.type,
+        active=payload.active,
+    )
 
 
-@router.delete("/{account_id}", status_code=204)
-def delete_account(account_id: int, db: Session = Depends(get_db)) -> None:
-    """Soft delete an account (mark as inactive).
-
-    Args:
-        account_id: Account ID
-        db: Database session
-
-    Raises:
-        HTTPException: If account not found
-    """
-    acc = db.query(Account).filter(Account.id == account_id).one_or_none()
-    if not acc:
-        raise HTTPException(status_code=404, detail=ErrorMessage.ACCOUNT_NOT_FOUND)
-
-    acc.active = False
-    db.commit()
+@router.delete("/{account_id}", status_code=204, responses=error_responses(401, 404, 422))
+def delete_account_endpoint(account_id: int, uow: UnitOfWork = Depends(get_uow)) -> None:
+    delete_account(uow, account_id=account_id)
+    return None

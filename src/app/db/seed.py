@@ -15,11 +15,12 @@ from dataclasses import asdict, dataclass
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.core.validators import parse_month_str
 from app.db.models import Account, Budget, Category, Transaction
+from app.db.uow import UnitOfWork
 from app.services.transfers import create_transfer
 
 
@@ -61,10 +62,10 @@ def _reset_all(db: Session) -> None:
 
     Order matters due to foreign keys.
     """
-    db.query(Transaction).delete(synchronize_session=False)
-    db.query(Budget).delete(synchronize_session=False)
-    db.query(Category).delete(synchronize_session=False)
-    db.query(Account).delete(synchronize_session=False)
+    db.execute(delete(Transaction))
+    db.execute(delete(Budget))
+    db.execute(delete(Category))
+    db.execute(delete(Account))
     db.commit()
 
 
@@ -258,7 +259,9 @@ def seed_all(
         # unless we're in reset mode (where duplication cannot happen).
         has_any_tx = db.execute(select(Transaction.id).limit(1)).first() is not None
         if has_any_tx and not reset:
-            skipped_reason = "DB já possui transações; pulando seed de transações para evitar duplicação."
+            skipped_reason = (
+                "DB já possui transações; pulando seed de transações para evitar duplicação."
+            )
         else:
             banco = account_by_name_type[("Banco", "BANK")]
             carteira = account_by_name_type[("Carteira", "CASH")]
@@ -339,14 +342,16 @@ def seed_all(
             db.commit()
 
             # One transfer (does not affect reports, but validates pair behavior)
+            uow = UnitOfWork(db)
             create_transfer(
-                db,
+                uow,
                 date=_month_date(month, 8),
                 description="Transferência Banco -> Carteira (seed)",
                 amount_abs=_d("400.00"),
                 from_account_id=banco.id,
                 to_account_id=carteira.id,
             )
+            db.commit()
             created_transfers += 1
 
     return SeedReport(
@@ -375,7 +380,10 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--reset",
         action="store_true",
-        help="Apaga dados (transactions/budgets/categories/accounts) e recria um dataset determinístico.",
+        help=(
+            "Apaga dados (transactions/budgets/categories/accounts) e recria um dataset "
+            "determinístico."
+        ),
     )
     p.add_argument(
         "--with-sample-transactions",

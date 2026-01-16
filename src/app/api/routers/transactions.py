@@ -1,13 +1,20 @@
-"""Transactions router - CRUD for transactions including transfers."""
+"""Transactions router - CRUD for transactions including transfers.
+
+This router is intentionally thin:
+- Pydantic handles structural validation (422)
+- Services handle business rules (DomainError -> ProblemDetail)
+- UnitOfWork dependency handles commit/rollback
+"""
+
+from __future__ import annotations
 
 import datetime as dt
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, Query
 
-from app.api.deps import get_db
-from app.core.error_messages import ErrorMessage
-from app.db.models import Account, Category, Transaction
+from app.api.deps import get_uow
+from app.api.openapi import error_responses
+from app.db.uow import UnitOfWork
 from app.schemas.transactions import (
     TransactionCreate,
     TransactionOut,
@@ -15,175 +22,79 @@ from app.schemas.transactions import (
     TransferOut,
     TxKind,
 )
-from app.services.transfers import create_transfer
+from app.services.transactions import (
+    create_transaction,
+    create_transfer_transaction,
+    delete_transaction,
+    list_transactions,
+)
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 
-@router.get("", response_model=list[TransactionOut])
-def list_transactions(
-    from_date: dt.date | None = Query(default=None),
-    to_date: dt.date | None = Query(default=None),
-    account_id: int | None = None,
-    category_id: int | None = None,
-    kind: TxKind | None = None,
-    db: Session = Depends(get_db),
-) -> list[Transaction]:
-    """List transactions with optional filters.
-
-    Args:
-        from_date: Start date filter
-        to_date: End date filter
-        account_id: Filter by account
-        category_id: Filter by category
-        kind: Filter by transaction kind
-        db: Database session
-
-    Returns:
-        List of transactions matching filters
-
-    Raises:
-        HTTPException: If from_date or to_date provided without the other
-    """
-    q = db.query(Transaction)
-
-    if (from_date is None) ^ (to_date is None):
-        raise HTTPException(status_code=400, detail=ErrorMessage.TX_FROM_TO_BOTH_REQUIRED)
-
-    if from_date and to_date:
-        q = q.filter(Transaction.date.between(from_date, to_date))
-
-    if account_id is not None:
-        q = q.filter(Transaction.account_id == account_id)
-
-    if category_id is not None:
-        q = q.filter(Transaction.category_id == category_id)
-
-    if kind is not None:
-        q = q.filter(Transaction.kind == kind.value)
-
-    return q.order_by(Transaction.date.desc(), Transaction.id.desc()).all()
-
-
-@router.post("", response_model=TransactionOut, status_code=201)
-def create_transaction(payload: TransactionCreate, db: Session = Depends(get_db)) -> Transaction:
-    """Create a new transaction (income or expense).
-
-    Use /transactions/transfer for transfers between accounts.
-
-    Args:
-        payload: Transaction creation data
-        db: Database session
-
-    Returns:
-        Created transaction
-
-    Raises:
-        HTTPException: For validation errors
-    """
-    if payload.kind == TxKind.TRANSFER:
-        raise HTTPException(status_code=400, detail=ErrorMessage.TX_USE_TRANSFER_ENDPOINT)
-
-    if payload.kind == TxKind.INCOME and payload.amount <= 0:
-        raise HTTPException(status_code=400, detail=ErrorMessage.TX_INCOME_REQUIRES_AMOUNT_GT_0)
-
-    if payload.kind == TxKind.EXPENSE and payload.amount >= 0:
-        raise HTTPException(status_code=400, detail=ErrorMessage.TX_EXPENSE_REQUIRES_AMOUNT_LT_0)
-
-    if payload.category_id is None:
-        raise HTTPException(status_code=400, detail=ErrorMessage.TX_CATEGORY_ID_REQUIRED)
-
-    # Validate account exists and is active
-    acc = (
-        db.query(Account)
-        .filter(Account.id == payload.account_id, Account.active.is_(True))
-        .one_or_none()
+@router.get("", response_model=list[TransactionOut], responses=error_responses(400, 401, 422))
+def list_transactions_endpoint(
+    from_date: dt.date | None = Query(
+        default=None,
+        description="Data inicial (YYYY-MM-DD). Deve ser enviada junto com to_date.",
+        examples=["2026-01-01"],
+    ),
+    to_date: dt.date | None = Query(
+        default=None,
+        description="Data final (YYYY-MM-DD). Deve ser enviada junto com from_date.",
+        examples=["2026-01-31"],
+    ),
+    account_id: int | None = Query(
+        default=None,
+        description="Filtrar por ID da conta.",
+        examples=[1],
+    ),
+    category_id: int | None = Query(
+        default=None,
+        description="Filtrar por ID da categoria.",
+        examples=[1],
+    ),
+    kind: TxKind | None = Query(
+        default=None,
+        description="Filtrar por tipo de transação.",
+        examples=["EXPENSE"],
+    ),
+    uow: UnitOfWork = Depends(get_uow),
+):
+    return list_transactions(
+        uow,
+        from_date=from_date,
+        to_date=to_date,
+        account_id=account_id,
+        category_id=category_id,
+        kind=kind,
     )
-    if not acc:
-        raise HTTPException(status_code=400, detail=ErrorMessage.ACCOUNT_INVALID_OR_INACTIVE)
-
-    # Validate category exists, is active, and matches kind
-    cat = (
-        db.query(Category)
-        .filter(Category.id == payload.category_id, Category.active.is_(True))
-        .one_or_none()
-    )
-    if not cat:
-        raise HTTPException(status_code=400, detail=ErrorMessage.CATEGORY_INVALID_OR_INACTIVE)
-
-    if payload.kind == TxKind.INCOME and cat.kind != "INCOME":
-        raise HTTPException(status_code=400, detail=ErrorMessage.TX_CATEGORY_INCOMPATIBLE_INCOME)
-    if payload.kind == TxKind.EXPENSE and cat.kind != "EXPENSE":
-        raise HTTPException(status_code=400, detail=ErrorMessage.TX_CATEGORY_INCOMPATIBLE_EXPENSE)
-
-    tx = Transaction(
-        date=payload.date,
-        description=payload.description,
-        amount=payload.amount,
-        kind=payload.kind.value,
-        account_id=payload.account_id,
-        category_id=payload.category_id,
-    )
-    db.add(tx)
-    db.commit()
-    db.refresh(tx)
-    return tx
 
 
-@router.post("/transfer", response_model=TransferOut, status_code=201)
-def transfer(payload: TransferCreate, db: Session = Depends(get_db)) -> dict:
-    """Create a transfer between two accounts.
-
-    This creates two linked transactions (one out, one in) with the same transfer_pair_id.
-
-    Args:
-        payload: Transfer creation data
-        db: Database session
-
-    Returns:
-        Dict with pair_id, out_id, and in_id
-
-    Raises:
-        HTTPException: For validation errors
-    """
-    try:
-        return create_transfer(
-            db,
-            date=payload.date,
-            description=payload.description,
-            amount_abs=payload.amount_abs,
-            from_account_id=payload.from_account_id,
-            to_account_id=payload.to_account_id,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+@router.post(
+    "",
+    response_model=TransactionOut,
+    status_code=201,
+    responses=error_responses(400, 401, 422),
+)
+def create_transaction_endpoint(payload: TransactionCreate, uow: UnitOfWork = Depends(get_uow)):
+    return create_transaction(uow, payload)
 
 
-@router.delete("/{transaction_id}", status_code=204)
-def delete_transaction(transaction_id: int, db: Session = Depends(get_db)) -> None:
-    """Delete a transaction.
+@router.post(
+    "/transfer",
+    response_model=TransferOut,
+    status_code=201,
+    responses=error_responses(400, 401, 422),
+)
+def transfer_endpoint(payload: TransferCreate, uow: UnitOfWork = Depends(get_uow)) -> dict:
+    return create_transfer_transaction(uow, payload)
 
-    For transfers, this automatically deletes both linked transactions (the pair).
 
-    Args:
-        transaction_id: Transaction ID to delete
-        db: Database session
-
-    Raises:
-        HTTPException: If transaction not found
-    """
-    tx = db.query(Transaction).filter(Transaction.id == transaction_id).one_or_none()
-    if not tx:
-        raise HTTPException(status_code=404, detail=ErrorMessage.TX_NOT_FOUND)
-
-    # If it's a transfer, delete the entire pair
-    if tx.kind == "TRANSFER" and tx.transfer_pair_id:
-        db.query(Transaction).filter(Transaction.transfer_pair_id == tx.transfer_pair_id).delete(
-            synchronize_session=False
-        )
-        db.commit()
-        return None
-
-    # Regular transaction: just delete it
-    db.delete(tx)
-    db.commit()
+@router.delete("/{transaction_id}", status_code=204, responses=error_responses(401, 404, 422))
+def delete_transaction_endpoint(
+    transaction_id: int,
+    uow: UnitOfWork = Depends(get_uow),
+) -> None:
+    delete_transaction(uow, transaction_id)
+    return None

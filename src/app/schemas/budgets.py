@@ -9,9 +9,19 @@ from app.schemas.types import MoneyDecimal
 class BudgetUpsert(BaseModel):
     """Schema for creating/updating a budget."""
 
-    month: str = Field(..., pattern=r"^\d{4}-\d{2}$")
-    category_id: int
-    amount_planned: MoneyDecimal = Field(..., gt=0)
+    month: str = Field(
+        ...,
+        pattern=r"^\d{4}-\d{2}$",
+        description="Mês no formato YYYY-MM.",
+        examples=["2026-01"],
+    )
+    category_id: int = Field(..., examples=[1])
+    amount_planned: MoneyDecimal = Field(
+        ...,
+        gt=0,
+        description="Valor planejado (sempre positivo). Preferencialmente enviar como string.",
+        examples=["500.00"],
+    )
 
     @field_validator("month")
     @classmethod

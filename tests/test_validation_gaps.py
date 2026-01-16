@@ -90,3 +90,24 @@ def test_transfer_with_inactive_account_returns_400(client, headers):
 def test_missing_api_key_returns_401(client):
     r = client.get("/accounts")
     assert r.status_code == 401
+
+
+def test_route_not_found_returns_problem_detail(client, headers):
+    r = client.get("/accounts_FAKE", headers=headers)
+    assert r.status_code == 404
+    body = r.json()
+    assert body["status"] == 404
+    assert body["title"] == "Not Found"
+    assert body["detail"] == "Not Found"
+    assert body["instance"] == "/accounts_FAKE"
+
+
+def test_method_not_allowed_returns_problem_detail(client, headers):
+    # /accounts exists, but PUT is not defined => 405
+    r = client.put("/accounts", headers=headers)
+    assert r.status_code == 405
+    body = r.json()
+    assert body["status"] == 405
+    assert body["title"] == "Method Not Allowed"
+    assert body["detail"] == "Method Not Allowed"
+    assert body["instance"] == "/accounts"

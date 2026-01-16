@@ -1,94 +1,40 @@
-"""Report service - generates financial reports."""
+"""Report service - generates financial reports.
 
-import calendar
-import datetime as dt
+Architecture goal:
+- depend on ports (`uow.reports`) instead of SQLAlchemy Session or repository functions.
+"""
+
+from __future__ import annotations
+
 from decimal import Decimal
 
-from sqlalchemy import func, select
-from sqlalchemy.orm import Session
-
 from app.core.money import quantize_money, serialize_money, to_decimal
-from app.core.validators import parse_month_str
-from app.db.models import Budget, Category, Transaction
+from app.db.uow import UnitOfWork
+from app.domain.rules.reports import month_range
 
 
-def _month_range(month: str) -> tuple[dt.date, dt.date]:
-    """Get first and last day of a month.
-
-    Args:
-        month: Month in YYYY-MM format
-
-    Returns:
-        Tuple of (first_day, last_day)
-
-    Raises:
-        ValueError: If month is invalid.
-    """
-    parsed = parse_month_str(month)
-    last_day = calendar.monthrange(parsed.year, parsed.month)[1]
-    return dt.date(parsed.year, parsed.month, 1), dt.date(parsed.year, parsed.month, last_day)
-
-
-def monthly_summary(db: Session, month: str) -> dict:
+def monthly_summary(uow: UnitOfWork, month: str) -> dict:
     """Generate monthly financial summary.
 
     Monetary values are returned as strings (Decimal), always with 2 decimal places.
-
-    Args:
-        db: Database session
-        month: Month in YYYY-MM format
-
-    Returns:
-        Dict with income_total, expense_total, balance, and by_category breakdown
     """
-    start, end = _month_range(month)
+    start, end = month_range(month)
 
-    # Total income
-    income_total_raw = db.execute(
-        select(func.coalesce(func.sum(Transaction.amount), 0))
-        .where(Transaction.kind == "INCOME")
-        .where(Transaction.date.between(start, end))
-    ).scalar_one()
+    income_total_raw = uow.reports.sum_income(start=start, end=end)
     income_total = quantize_money(to_decimal(income_total_raw))
 
-    # Total expenses (signed, will be negative)
-    expense_total_signed_raw = db.execute(
-        select(func.coalesce(func.sum(Transaction.amount), 0))
-        .where(Transaction.kind == "EXPENSE")
-        .where(Transaction.date.between(start, end))
-    ).scalar_one()
+    expense_total_signed_raw = uow.reports.sum_expense(start=start, end=end)
     expense_total_signed = quantize_money(to_decimal(expense_total_signed_raw))
 
-    # Get planned budgets
-    budgets = db.execute(
-        select(Budget.category_id, Budget.amount_planned).where(Budget.month == month)
-    ).all()
+    budgets = uow.reports.list_budgets_for_month(month=month)
     planned_map = {int(cid): quantize_money(to_decimal(val)) for cid, val in budgets}
 
-    # Get realized expenses by category (signed values, negative)
-    realized = db.execute(
-        select(Transaction.category_id, func.coalesce(func.sum(Transaction.amount), 0))
-        .where(Transaction.kind == "EXPENSE")
-        .where(Transaction.category_id.is_not(None))
-        .where(Transaction.date.between(start, end))
-        .group_by(Transaction.category_id)
-    ).all()
+    realized = uow.reports.sum_expenses_by_category(start=start, end=end)
     realized_map = {int(cid): quantize_money(to_decimal(val)) for cid, val in realized}
 
-    # Get all category IDs involved (planned or realized)
     all_cat_ids = sorted(set(planned_map.keys()) | set(realized_map.keys()))
+    cat_name = uow.reports.get_category_names(category_ids=all_cat_ids)
 
-    # Get category names (include inactive to preserve history)
-    if all_cat_ids:
-        categories = db.execute(
-            select(Category.id, Category.name).where(Category.id.in_(all_cat_ids))
-        ).all()
-    else:
-        categories = []
-
-    cat_name = {int(cid): name for cid, name in categories}
-
-    # Build by_category breakdown
     by_category: list[dict] = []
     for cid in all_cat_ids:
         planned = planned_map.get(cid, Decimal("0"))

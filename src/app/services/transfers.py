@@ -1,16 +1,19 @@
 """Transfer service - handles transfer transactions."""
 
+from __future__ import annotations
+
 import datetime as dt
 from decimal import Decimal
 
-from sqlalchemy.orm import Session
-
 from app.core.error_messages import ErrorMessage
-from app.db.models import Account, Transaction, new_pair_id
+from app.core.exceptions import BadRequestError
+from app.db.uow import UnitOfWork
+from app.domain.ids import new_transfer_pair_id
+from app.domain.rules.transactions import validate_new_transfer
 
 
 def create_transfer(
-    db: Session,
+    uow: UnitOfWork,
     *,
     date: dt.date,
     description: str,
@@ -20,66 +23,34 @@ def create_transfer(
 ) -> dict:
     """Create a transfer (2 linked transactions).
 
-    Args:
-        db: Database session
-        date: Transfer date
-        description: Transfer description
-        amount_abs: Absolute amount (must be > 0)
-        from_account_id: Source account ID
-        to_account_id: Destination account ID
-
-    Returns:
-        Dict with pair_id, out_id, and in_id
+    Notes:
+        This service DOES NOT commit. The caller (API UnitOfWork or script) controls the
+        transaction boundary.
 
     Raises:
-        ValueError: If accounts are the same or amount_abs <= 0
+        BadRequestError: For invalid business rules (same account, inactive accounts, etc.)
     """
-    if from_account_id == to_account_id:
-        raise ValueError(ErrorMessage.TRANSFER_SAME_ACCOUNTS)
-    if amount_abs <= 0:
-        raise ValueError(ErrorMessage.TRANSFER_AMOUNT_ABS_GT_0)
+    # Domain-level invariants (no DB required).
+    validate_new_transfer(
+        amount_abs=amount_abs, from_account_id=from_account_id, to_account_id=to_account_id
+    )
 
     # Validate accounts exist and are active (keep behavior consistent with /transactions).
-    from_acc = (
-        db.query(Account)
-        .filter(Account.id == from_account_id, Account.active.is_(True))
-        .one_or_none()
-    )
-    if not from_acc:
-        raise ValueError(ErrorMessage.TRANSFER_FROM_ACCOUNT_INVALID)
+    if not uow.accounts.get_active_account(from_account_id):
+        raise BadRequestError(ErrorMessage.TRANSFER_FROM_ACCOUNT_INVALID)
 
-    to_acc = (
-        db.query(Account)
-        .filter(Account.id == to_account_id, Account.active.is_(True))
-        .one_or_none()
-    )
-    if not to_acc:
-        raise ValueError(ErrorMessage.TRANSFER_TO_ACCOUNT_INVALID)
+    if not uow.accounts.get_active_account(to_account_id):
+        raise BadRequestError(ErrorMessage.TRANSFER_TO_ACCOUNT_INVALID)
 
-    pair = new_pair_id()
+    pair = new_transfer_pair_id()
 
-    out_tx = Transaction(
+    out_tx, in_tx = uow.transactions.create_transfer_pair(
         date=date,
         description=description,
-        amount=-amount_abs,
-        kind="TRANSFER",
-        account_id=from_account_id,
-        category_id=None,
-        transfer_pair_id=pair,
+        amount_abs=amount_abs,
+        from_account_id=from_account_id,
+        to_account_id=to_account_id,
+        pair_id=pair,
     )
-    in_tx = Transaction(
-        date=date,
-        description=description,
-        amount=amount_abs,
-        kind="TRANSFER",
-        account_id=to_account_id,
-        category_id=None,
-        transfer_pair_id=pair,
-    )
-
-    db.add_all([out_tx, in_tx])
-    db.commit()
-    db.refresh(out_tx)
-    db.refresh(in_tx)
 
     return {"pair_id": pair, "out_id": out_tx.id, "in_id": in_tx.id}

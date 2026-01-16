@@ -26,7 +26,12 @@ class MonthlySummaryByCategoryOut(BaseModel):
 
 
 class MonthlySummaryOut(BaseModel):
-    """Monthly summary report output."""
+    """Monthly summary report output.
+
+    Notes:
+        - expense_total is returned as an absolute value (positive).
+        - deviation = realized - planned (can be negative).
+    """
 
     model_config = ConfigDict(extra="forbid")
 

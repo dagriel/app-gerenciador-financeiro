@@ -73,6 +73,18 @@ alembic upgrade head
 > alembic revision --autogenerate -m "descricao da alteracao"
 > alembic upgrade head
 > ```
+>
+> ⚠️ **SQLite + Alembic (importante)**  
+> O SQLite não suporta `ALTER TABLE ... ADD CONSTRAINT`. Se a migração envolver **constraints**
+> (ex.: UNIQUE) ou outras alterações estruturais que o SQLite não suporta via `ALTER`,
+> use o **batch mode** do Alembic (estratégia *copy-and-move*):
+>
+> ```py
+> from alembic import op
+>
+> with op.batch_alter_table("accounts", schema=None) as batch_op:
+>     batch_op.create_unique_constraint("uq_account_name_type", ["name", "type"])
+> ```
 
 ### 4. Seeds (dados iniciais do MVP)
 
@@ -109,10 +121,12 @@ Acesse a documentação interativa (Swagger UI):
 
 ## 🔐 Autenticação
 
-Todas as requisições (exceto `/health`) exigem o header **X-API-Key**:
+Todas as requisições **(exceto `/health`)** exigem o header **X-API-Key**.
+
+Exemplo (listar contas):
 
 ```bash
-curl -H "X-API-Key: CHANGE_ME_LOCAL" http://127.0.0.1:8000/health
+curl -H "X-API-Key: CHANGE_ME_LOCAL" http://127.0.0.1:8000/accounts
 ```
 
 Para desabilitar a proteção (apenas desenvolvimento):
@@ -120,6 +134,95 @@ Para desabilitar a proteção (apenas desenvolvimento):
 ```env
 API_KEY_ENABLED=false
 ```
+
+## 🧾 Contrato de erros (ProblemDetail)
+
+Este MVP padroniza as respostas de erro no formato **ProblemDetail** (inspirado no RFC 7807).
+
+> 📌 **Catálogo oficial de códigos/erros**: veja [`docs/ERROR_CATALOG.md`](docs/ERROR_CATALOG.md)
+
+Formato:
+
+```json
+{
+  "status": 400,
+  "title": "Bad Request",
+  "detail": "Mensagem legível",
+  "code": "ERROR_CODE_OPCIONAL",
+  "instance": "/rota"
+}
+```
+
+Campos:
+
+- `detail`: mensagem humana (pt-BR)
+- `code`: **código estável** (quando aplicável), derivado dos enums internos (ex.: `TX_NOT_FOUND`, `API_KEY_INVALID`)
+- `instance`: path da requisição
+- `errors`: **opcional**, presente principalmente em **422** (erros de validação do Pydantic)
+
+### 400 vs 422 (importante)
+
+- **422 Unprocessable Entity**: erro de validação do **Pydantic** (schema). Ex.: campo obrigatório ausente, tipo inválido, `amount_abs <= 0`, etc.
+- **400 Bad Request**: validação de **regra de negócio** ou validação manual em query params. Ex.: filtro `from_date/to_date`, mês inválido em query string (`month`), categoria/conta inválida/inativa, etc.
+
+### Exemplos reais
+
+**401 Unauthorized** (API key inválida ou ausente quando habilitada):
+
+```json
+{
+  "status": 401,
+  "title": "Unauthorized",
+  "detail": "API key inválida",
+  "code": "API_KEY_INVALID",
+  "instance": "/accounts"
+}
+```
+
+**404 Not Found** (rota inexistente; retorno de roteamento do framework):
+
+```json
+{
+  "status": 404,
+  "title": "Not Found",
+  "detail": "Not Found",
+  "instance": "/accounts_FAKE"
+}
+```
+
+**405 Method Not Allowed** (método não permitido; retorno de roteamento do framework):
+
+```json
+{
+  "status": 405,
+  "title": "Method Not Allowed",
+  "detail": "Method Not Allowed",
+  "instance": "/accounts"
+}
+```
+
+**422 Unprocessable Entity** (validação; com `errors`):
+
+```json
+{
+  "status": 422,
+  "title": "Unprocessable Entity",
+  "detail": "Erro de validação",
+  "code": "REQUEST_VALIDATION_ERROR",
+  "instance": "/transactions/transfer",
+  "errors": [
+    {
+      "loc": ["body", "amount_abs"],
+      "msg": "Input should be greater than 0",
+      "type": "greater_than"
+    }
+  ]
+}
+```
+
+> Observação: por padrão, o Swagger/OpenAPI descreve apenas operações existentes.  
+> Para melhorar a fidelidade do contrato, este projeto documenta como respostas “comuns” os erros que de fato podem ocorrer de forma transversal (**401/405/422**).  
+> Já o **404** é documentado principalmente em rotas com **path params** (ex.: `/accounts/{account_id}`) para representar **resource not found**; o 404 por “rota inexistente” é um comportamento do roteamento do framework (não específico de uma operação).
 
 ## 💡 Exemplos de Uso
 
@@ -133,8 +236,10 @@ Para evitar problemas de precisão de `float`, este MVP usa contrato “clean”
 
 ### Health Check
 
+`/health` não requer autenticação:
+
 ```bash
-curl -H "X-API-Key: CHANGE_ME_LOCAL" http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/health
 ```
 
 ### Criar Conta
@@ -265,6 +370,28 @@ app-gerenciador-financeiro/
 ├── pyproject.toml        # Dependências e configurações
 └── README.md             # Este arquivo
 ```
+
+## 🏛️ Arquitetura (padrões do projeto)
+
+Leitura recomendada:
+- **Arquitetura e guidelines**: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- **Revisão crítica (gaps + recomendações)**: [`docs/ARCH_REVIEW.md`](docs/ARCH_REVIEW.md)
+- **Decisões arquiteturais (ADRs)**: [`docs/adr/README.md`](docs/adr/README.md)
+
+Este projeto segue uma arquitetura em camadas com foco em manutenibilidade e testabilidade:
+
+- **Routers (API)**: devem ser *thin* (apenas I/O HTTP + delegação)
+- **Services (use-cases)**: orquestração do caso de uso; **não** fazem commit/rollback
+- **Domain**: regras/invariantes e Value Objects (sem I/O)
+- **Repositories**: centralizam **queries** reutilizáveis e/ou complexas
+- **Unit of Work (UoW)**: boundary transacional por request/script (commit/rollback controlado fora do service)
+
+Regras práticas:
+- Routers injetam `UnitOfWork` via `Depends(get_uow)`
+- Services recebem `UnitOfWork` e usam `uow.session` + `uow.flush()`
+- Repositories recebem `Session` e **não** realizam commit
+- Regras puras ficam em `src/app/domain/*` (ex.: `domain/rules/*`)
+- “Guardrails” automatizados de arquitetura: `pytest -k architecture` (evita drift entre camadas)
 
 ## 🔄 Workflow de Desenvolvimento
 
