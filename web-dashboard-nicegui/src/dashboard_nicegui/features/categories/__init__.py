@@ -1,0 +1,1 @@
+"""Feature: categorias (categories)."""

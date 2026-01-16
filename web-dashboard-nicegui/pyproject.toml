@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "web-dashboard-nicegui"
+version = "0.1.0"
+description = "Dashboard web (NiceGUI) para consumir a API app-gerenciador-financeiro via BFF server-side"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "nicegui>=1.4.0",
+  "httpx>=0.27.0",
+  "pydantic>=2.7.0",
+  "pydantic-settings>=2.3.0",
+  "python-dotenv>=1.0.1",
+  "babel>=2.15.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.6.0",
+  "pytest>=8.0.0",
+  "pytest-asyncio>=0.23.0",
+  "pyright>=1.1.350",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E203", "B008"] # B008: FastAPI/NiceGUI pattern (call in defaults)
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --disable-warnings --maxfail=1"
